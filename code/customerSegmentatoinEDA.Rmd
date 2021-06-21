@@ -1,0 +1,100 @@
+---
+title: "Kaggle Notebook - Customer Segmentation"
+---
+
+# Project Documentation
+https://www.kaggle.com/fabiendaniel/customer-segmentation/notebook
+
+# Setup
+
+```{r setup}
+library(tidyverse)
+library(janitor)
+library(here)
+library(clock)
+library(tidylog)
+```
+
+# Get data
+```{r}
+input <- read_csv(here::here("data", "data.csv")) |> 
+  clean_names("lower_camel") 
+
+
+```
+
+# Clean
+```{r}
+input |> 
+  glimpse()
+
+input |> 
+  summary()
+
+input |> 
+  get_dupes()
+
+input |> 
+  skimr::skim()
+```
+
+- parse the invoiceDate col as date-time col
+- duplicates: a considerable amount of duplicate rows
+- nulls in customerId's, no way to tie rows to a particular customer
+- stockCodes are not always in same format and descriptions are wonky
+
+```{r}
+descFix <- input |> 
+  mutate(
+    stockCode = str_to_upper(stockCode)
+  ) |> 
+  distinct(stockCode, description) |> 
+  arrange(stockCode)
+
+products <- descFix |> 
+  mutate(
+    description = str_squish(str_remove_all(description, "\\,")),
+    length = str_length(description), 
+    getRid = str_detect(str_squish(description), "[:lower:]|^[:upper:]+$|\\?")
+  ) |> 
+  filter(
+    !is.na(description), 
+    getRid == F
+  ) |> 
+  distinct() |> 
+  arrange(stockCode, desc(length)) |> 
+  group_by(stockCode) |> 
+  mutate(
+    row_num = row_number(stockCode)
+  ) |> 
+  filter(row_num == 1) |> 
+  select(stockCode, productName = description)
+ 
+
+```
+
+
+```{r}
+clean <- input |> 
+  mutate(
+    stockCode = str_to_upper(stockCode),
+    invoiceDate = date_time_parse(invoiceDate, format = "%m/%d/%Y %H:%M", zone = "CET")
+  ) |> 
+  filter(!is.na(customerId)) |> 
+  distinct() |> 
+  left_join(products, by = "stockCode")
+```
+
+# EDA
+```{r}
+clean |> 
+  summarise(
+    rows = n(), 
+    dist_customer = n_distinct(customerId), 
+    dist_products = n_distinct(stockCode), 
+    dist_invoices = n_distinct(invoiceNo)
+  )
+  count(customerId, sort = T)
+```
+
+
